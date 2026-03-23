@@ -31,6 +31,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--strong_end_column", default=None)
     parser.add_argument("--compute_perch_embeddings", action="store_true")
     parser.add_argument("--fail_on_bad_audio", action="store_true", help="Stop immediately when an audio file cannot be decoded.")
+    parser.add_argument("--limit_files", type=int, default=None, help="Only preprocess the first N unique audio files for a quick smoke test.")
     return parser.parse_args()
 
 
@@ -57,6 +58,10 @@ def main() -> None:
     perch_extractor = PerchEmbeddingExtractor() if args.compute_perch_embeddings else None
 
     file_metadata = metadata[["soundscape_id", "audio_path"]].drop_duplicates("soundscape_id").reset_index(drop=True)
+    if args.limit_files is not None:
+        if args.limit_files <= 0:
+            raise ValueError("--limit_files must be a positive integer.")
+        file_metadata = file_metadata.head(args.limit_files).reset_index(drop=True)
     file_rows: list[dict[str, object]] = []
     skipped_rows: list[dict[str, str]] = []
     for row in tqdm(file_metadata.itertuples(index=False), total=len(file_metadata), desc="preprocess"):
