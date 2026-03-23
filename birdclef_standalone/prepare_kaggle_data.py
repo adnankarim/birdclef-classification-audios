@@ -34,10 +34,28 @@ def parse_args() -> argparse.Namespace:
 
 
 def run_kaggle_download(competition: str, data_dir: Path, force_download: bool) -> None:
-    command = [sys.executable, "-m", "kaggle", "competitions", "download", "-c", competition, "-p", str(data_dir)]
+    commands: list[list[str]] = []
+    kaggle_bin = shutil.which("kaggle")
+    if kaggle_bin:
+        commands.append([kaggle_bin, "competitions", "download", "-c", competition, "-p", str(data_dir)])
+    commands.append([sys.executable, "-m", "kaggle.cli", "competitions", "download", "-c", competition, "-p", str(data_dir)])
+
     if force_download:
-        command.append("--force")
-    subprocess.run(command, check=True)
+        for command in commands:
+            command.append("--force")
+
+    last_error: subprocess.CalledProcessError | None = None
+    for command in commands:
+        try:
+            subprocess.run(command, check=True)
+            return
+        except subprocess.CalledProcessError as exc:
+            last_error = exc
+
+    raise RuntimeError(
+        "Failed to download competition data with the Kaggle CLI. "
+        "Make sure the `kaggle` command works and API credentials are configured."
+    ) from last_error
 
 
 def extract_archives(data_dir: Path, keep_zips: bool) -> None:
