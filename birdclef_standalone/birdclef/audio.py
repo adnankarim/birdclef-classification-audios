@@ -132,6 +132,10 @@ def compute_logmel(audio: np.ndarray | torch.Tensor, params: AudioParams) -> tor
         waveform = audio.to(dtype=torch.float32)
     if waveform.ndim != 1:
         raise ValueError(f"Expected mono waveform, got shape {tuple(waveform.shape)}")
+    if waveform.numel() == 0:
+        waveform = torch.zeros(params.n_fft, dtype=torch.float32)
+    elif waveform.numel() < params.n_fft:
+        waveform = F.pad(waveform, (0, params.n_fft - waveform.numel()))
 
     window = torch.hann_window(params.win_length, periodic=True)
     stft = torch.stft(
