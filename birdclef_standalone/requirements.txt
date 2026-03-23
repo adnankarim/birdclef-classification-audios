@@ -1,0 +1,12 @@
+numpy
+pandas
+scipy
+scikit-learn
+soundfile
+tqdm
+pyyaml
+kaggle
+torch
+torchvision
+onnx
+onnxruntime
