@@ -30,6 +30,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--strong_start_column", default=None)
     parser.add_argument("--strong_end_column", default=None)
     parser.add_argument("--compute_perch_embeddings", action="store_true")
+    parser.add_argument("--fail_on_bad_audio", action="store_true", help="Stop immediately when an audio file cannot be decoded.")
     return parser.parse_args()
 
 
@@ -55,11 +56,25 @@ def main() -> None:
 
     perch_extractor = PerchEmbeddingExtractor() if args.compute_perch_embeddings else None
 
+    file_metadata = metadata[["soundscape_id", "audio_path"]].drop_duplicates("soundscape_id").reset_index(drop=True)
     file_rows: list[dict[str, object]] = []
-    for row in tqdm(metadata.itertuples(index=False), total=len(metadata), desc="preprocess"):
-        audio_path = Path(getattr(row, args.audio_column))
+    skipped_rows: list[dict[str, str]] = []
+    for row in tqdm(file_metadata.itertuples(index=False), total=len(file_metadata), desc="preprocess"):
+        audio_path = Path(row.audio_path)
         soundscape_id = getattr(row, "soundscape_id")
-        waveform = load_audio_mono(audio_path, sample_rate=params.sample_rate)
+        try:
+            waveform = load_audio_mono(audio_path, sample_rate=params.sample_rate)
+        except Exception as exc:
+            if args.fail_on_bad_audio:
+                raise
+            skipped_rows.append(
+                {
+                    "soundscape_id": str(soundscape_id),
+                    "audio_path": str(audio_path),
+                    "error": str(exc),
+                }
+            )
+            continue
         logmel = compute_logmel(waveform, params).cpu().numpy().astype(np.float16)
         spec_path = spec_dir / f"{soundscape_id}.npy"
         np.save(spec_path, logmel)
@@ -96,6 +111,12 @@ def main() -> None:
 
     file_manifest = pd.DataFrame(file_rows)
     file_manifest.to_csv(output_dir / "manifest.csv", index=False)
+    if skipped_rows:
+        skipped_manifest = pd.DataFrame(skipped_rows)
+        skipped_manifest.to_csv(output_dir / "skipped_audio.csv", index=False)
+        print(f"Skipped {len(skipped_manifest)} unreadable audio files. Details: {output_dir / 'skipped_audio.csv'}")
+    if file_manifest.empty:
+        raise RuntimeError("No audio files were successfully preprocessed.")
 
     window_manifest = build_window_manifest(
         metadata=metadata,
@@ -106,6 +127,7 @@ def main() -> None:
         strong_end_column=args.strong_end_column,
     )
     save_window_manifest(window_manifest, output_dir / "window_manifest.csv")
+    print(f"Prepared {len(file_manifest)} audio files and {len(window_manifest)} windows.")
 
 
 if __name__ == "__main__":

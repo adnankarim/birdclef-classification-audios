@@ -87,7 +87,7 @@ def load_audio_mono(path: str | Path, sample_rate: int) -> np.ndarray:
     path = Path(path)
     try:
         audio, src_sr = sf.read(str(path), dtype="float32", always_2d=False)
-    except RuntimeError:
+    except RuntimeError as exc:
         ffmpeg_bin = shutil.which("ffmpeg")
         if ffmpeg_bin is None:
             raise
@@ -108,7 +108,13 @@ def load_audio_mono(path: str | Path, sample_rate: int) -> np.ndarray:
             str(sample_rate),
             "-",
         ]
-        result = subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            result = subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        except subprocess.CalledProcessError as ffmpeg_exc:
+            stderr_text = ffmpeg_exc.stderr.decode("utf-8", errors="replace").strip()
+            raise RuntimeError(
+                f"Audio decode failed for {path}. soundfile error: {exc}. ffmpeg error: {stderr_text or ffmpeg_exc}"
+            ) from ffmpeg_exc
         audio = np.frombuffer(result.stdout, dtype=np.float32)
         src_sr = sample_rate
     if audio.ndim == 2:
