@@ -10,10 +10,10 @@ from pathlib import Path
 import pandas as pd
 
 from birdclef.utils import ensure_dir
-from dataset import build_audio_dir_manifest, normalize_training_metadata
+from dataset import DEFAULT_AUDIO_EXTENSIONS, build_audio_dir_manifest, normalize_training_metadata
 
 TRAIN_METADATA_CANDIDATES = ("train_metadata.csv", "train_labels.csv", "train.csv")
-TRAIN_AUDIO_DIR_CANDIDATES = ("train_soundscapes", "train_audio")
+TRAIN_AUDIO_DIR_CANDIDATES = ("train_audio", "train_soundscapes")
 TEST_AUDIO_DIR_CANDIDATES = ("test_soundscapes", "test_audio")
 
 
@@ -89,6 +89,51 @@ def detect_competition_root(base_dir: Path) -> Path:
     raise FileNotFoundError(f"Could not find extracted competition files under {base_dir}.")
 
 
+def resolve_candidate_audio_path(audio_dir: Path, raw_value: object) -> Path:
+    raw_text = str(raw_value).strip()
+    joined = audio_dir / raw_text
+    if joined.is_file():
+        return joined
+    if joined.suffix:
+        return joined
+    for ext in DEFAULT_AUDIO_EXTENSIONS:
+        candidate = joined.with_suffix(ext)
+        if candidate.is_file():
+            return candidate
+    return joined
+
+
+def pick_training_audio_dir(competition_root: Path, metadata: pd.DataFrame) -> Path | None:
+    candidates = [
+        path
+        for name in TRAIN_AUDIO_DIR_CANDIDATES
+        for path in [find_first_existing(competition_root, (name,), want_dir=True)]
+        if path is not None
+    ]
+    if len(candidates) <= 1:
+        return candidates[0] if candidates else None
+
+    sample_series = None
+    for column in ("audio_path", "filename", "path", "filepath"):
+        if column in metadata.columns:
+            series = metadata[column].dropna().astype(str).str.strip()
+            series = series[series != ""]
+            if not series.empty:
+                sample_series = series.head(256)
+                break
+    if sample_series is None:
+        return candidates[0]
+
+    best_dir = candidates[0]
+    best_score = -1
+    for candidate_dir in candidates:
+        score = sum(resolve_candidate_audio_path(candidate_dir, value).is_file() for value in sample_series)
+        if score > best_score:
+            best_score = score
+            best_dir = candidate_dir
+    return best_dir
+
+
 def main() -> None:
     args = parse_args()
     data_dir = ensure_dir(args.data_dir)
@@ -106,14 +151,16 @@ def main() -> None:
             "Could not find a training metadata CSV. Expected one of: "
             + ", ".join(TRAIN_METADATA_CANDIDATES)
         )
-    train_audio_dir = find_first_existing(competition_root, TRAIN_AUDIO_DIR_CANDIDATES, want_dir=True)
+    train_metadata_raw = pd.read_csv(train_csv)
+    train_audio_dir = pick_training_audio_dir(competition_root, train_metadata_raw)
     train_metadata = normalize_training_metadata(
-        pd.read_csv(train_csv),
+        train_metadata_raw,
         audio_base_dir=train_audio_dir,
         require_audio=True,
         require_labels=True,
     )
     train_metadata.to_csv(output_dir / "train_metadata.csv", index=False)
+    print(f"Using training audio directory: {train_audio_dir}")
 
     test_audio_dir = find_first_existing(competition_root, TEST_AUDIO_DIR_CANDIDATES, want_dir=True)
     if test_audio_dir is None:
