@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import math
+import shutil
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -82,7 +84,33 @@ def build_mel_filterbank(params: AudioParams) -> torch.Tensor:
 
 
 def load_audio_mono(path: str | Path, sample_rate: int) -> np.ndarray:
-    audio, src_sr = sf.read(str(path), dtype="float32", always_2d=False)
+    path = Path(path)
+    try:
+        audio, src_sr = sf.read(str(path), dtype="float32", always_2d=False)
+    except RuntimeError:
+        ffmpeg_bin = shutil.which("ffmpeg")
+        if ffmpeg_bin is None:
+            raise
+        command = [
+            ffmpeg_bin,
+            "-nostdin",
+            "-v",
+            "error",
+            "-i",
+            str(path),
+            "-f",
+            "f32le",
+            "-acodec",
+            "pcm_f32le",
+            "-ac",
+            "1",
+            "-ar",
+            str(sample_rate),
+            "-",
+        ]
+        result = subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        audio = np.frombuffer(result.stdout, dtype=np.float32)
+        src_sr = sample_rate
     if audio.ndim == 2:
         audio = audio.mean(axis=1)
     if src_sr != sample_rate:
@@ -147,4 +175,3 @@ def iter_window_frames(num_frames: int, params: AudioParams) -> Iterable[int]:
 
 def count_windows(num_frames: int, params: AudioParams) -> int:
     return sum(1 for _ in iter_window_frames(num_frames, params))
-
