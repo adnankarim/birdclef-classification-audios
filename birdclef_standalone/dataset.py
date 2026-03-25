@@ -301,10 +301,12 @@ class BirdCLEFWindowDataset(Dataset):
             "row_id": f"{row.soundscape_id}_{int(round(float(row.end_sec)))}",
         }
         if self.pseudo_label_columns:
-            sample["soft_targets"] = torch.tensor(
-                row[self.pseudo_label_columns].to_numpy(dtype=np.float32),
-                dtype=torch.float32,
-            )
+            soft_targets = row[self.pseudo_label_columns].to_numpy(dtype=np.float32, copy=True)
+            hard_targets_np = hard_targets.numpy()
+            if np.isnan(soft_targets).any():
+                soft_targets = np.where(np.isnan(soft_targets), hard_targets_np, soft_targets)
+            soft_targets = np.clip(soft_targets, 0.0, 1.0)
+            sample["soft_targets"] = torch.tensor(soft_targets, dtype=torch.float32)
         if self.use_perch_embeddings and isinstance(row.get("perch_embedding_path", ""), str) and row.perch_embedding_path:
             embeddings = self._load_embedding(str(row.perch_embedding_path))
             sample["perch_embedding"] = embeddings[int(row.window_idx)]

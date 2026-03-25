@@ -58,9 +58,9 @@ class DistillationLoss(nn.Module):
     ) -> torch.Tensor:
         loss = self.hard_weight * self.hard_loss(student_logits, hard_targets)
         if teacher_probs is not None:
-            teacher_probs = teacher_probs.float().clamp(1e-4, 1.0 - 1e-4)
+            teacher_probs = torch.nan_to_num(teacher_probs.float(), nan=0.0, posinf=1.0, neginf=0.0)
+            teacher_probs = teacher_probs.clamp(1e-4, 1.0 - 1e-4)
             student_probs = torch.sigmoid(student_logits / self.temperature)
             soft = F.binary_cross_entropy(student_probs, teacher_probs, reduction="mean")
             loss = loss + self.soft_weight * soft
         return loss
-
