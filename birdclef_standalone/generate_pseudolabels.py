@@ -118,8 +118,8 @@ def main() -> None:
         " ".join([classes[idx] for idx, prob in enumerate(row) if prob >= args.label_threshold])
         for row in ensemble_probs[keep_mask]
     ]
-    for class_idx, class_name in enumerate(classes):
-        kept[class_name] = ensemble_probs[keep_mask, class_idx]
+    prob_df = pd.DataFrame(ensemble_probs[keep_mask], columns=classes, index=kept.index)
+    kept = pd.concat([kept, prob_df], axis=1)
 
     kept.to_csv(output_dir / f"pseudo_labels_round{args.round_idx}.csv", index=False)
     save_json(
