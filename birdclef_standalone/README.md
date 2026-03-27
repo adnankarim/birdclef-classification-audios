@@ -11,6 +11,7 @@ Files:
 - `train_student.py`
 - `export_int8.py`
 - `infer_kaggle.py`
+- `compare_onnx_models.py`
 - `kaggle_submission_runner.py`
 - `birdclef/`
 
@@ -65,6 +66,15 @@ python3 package_kaggle_artifacts.py \
   --class_list_path birdclef_prepared/classes.txt \
   --output_dir final_artifacts \
   --zip
+
+python3 compare_onnx_models.py \
+  --fp32_model_path outputs/birdclef_export/student.onnx \
+  --int8_model_path outputs/birdclef_export/student.int8.onnx \
+  --class_list_path birdclef_prepared/classes.txt \
+  --metadata_csv data/train_metadata.csv \
+  --sample_n_files 128 \
+  --output_json onnx_compare_report.json \
+  --per_file_csv onnx_compare_per_file.csv
 
 python3 kaggle_submission_runner.py \
   --artifact_dir /kaggle/input/YOUR_DATASET_NAME \
