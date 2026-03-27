@@ -58,6 +58,12 @@ python3 infer_kaggle.py \
   --test_csv data/test_metadata.csv \
   --sample_submission_csv data/sample_submission.csv \
   --output_csv submission.csv
+
+python3 package_kaggle_artifacts.py \
+  --model_path outputs/birdclef_export/student.int8.onnx \
+  --class_list_path birdclef_prepared/classes.txt \
+  --output_dir final_artifacts \
+  --zip
 ```
 
 Notes:
@@ -67,3 +73,4 @@ Notes:
 - `infer_kaggle.py` uses `sample_submission.csv` as the authoritative row list when it is provided, so submission row IDs and column order match Kaggle exactly.
 - `--train_perch_teacher` requires separate Perch tooling and cached/window embedding support. If you enable it, run `preprocess.py` with `--compute_perch_embeddings`.
 - Optional grouped CV columns are `author`, `recordist`, and `site`.
+- Final submission inference requires real test audio. If your local environment only has `test_soundscapes/readme.txt`, build `final_artifacts` and run `infer_kaggle.py` inside a Kaggle notebook instead.
