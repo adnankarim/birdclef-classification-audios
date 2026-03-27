@@ -61,12 +61,21 @@ def main() -> None:
         output_names=["probabilities"],
         dynamic_axes={"inputs": {0: "batch"}, "probabilities": {0: "batch"}},
         opset_version=17,
+        dynamo=False,
     )
+    print(f"Exported ONNX model: {onnx_path}")
 
     if not args.calibration_window_manifest_csv:
         return
 
-    from onnxruntime.quantization import CalibrationDataReader, QuantFormat, QuantType, quantize_static
+    try:
+        from onnxruntime.quantization import CalibrationDataReader, QuantFormat, QuantType, quantize_static
+    except ModuleNotFoundError as exc:
+        raise ModuleNotFoundError(
+            "INT8 quantization requires `onnxruntime`. "
+            "Install it with `python3 -m pip install onnxruntime` or reinstall from requirements.txt. "
+            f"The non-quantized ONNX model was already written to {onnx_path}."
+        ) from exc
 
     calibration_df = load_manifest(args.calibration_window_manifest_csv).head(args.calibration_samples)
     dataset = BirdCLEFWindowDataset(calibration_df, checkpoint["classes"], params=params, training=False)
@@ -91,6 +100,7 @@ def main() -> None:
         weight_type=QuantType.QInt8,
         quant_format=QuantFormat.QDQ,
     )
+    print(f"Exported INT8 ONNX model: {output_dir / 'student.int8.onnx'}")
 
 
 if __name__ == "__main__":
