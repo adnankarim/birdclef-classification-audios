@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -54,15 +55,37 @@ def write_placeholder_submission(sample_submission: Path, output_path: Path) -> 
     submission.to_csv(output_path, index=False)
 
 
+def stage_artifacts(artifact_dir: Path, runtime_dir: Path) -> Path:
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+    for child in runtime_dir.iterdir():
+        if child.is_dir():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+
+    for item in artifact_dir.iterdir():
+        if item.is_file() and item.suffix not in {".zip", ".tar"}:
+            shutil.copy2(item, runtime_dir / item.name)
+
+    for item in artifact_dir.iterdir():
+        if item.is_dir():
+            shutil.copytree(item, runtime_dir / item.name)
+        elif item.is_file() and item.suffix in {".zip", ".tar"}:
+            shutil.unpack_archive(str(item), extract_dir=str(runtime_dir))
+
+    return runtime_dir
+
+
 def main() -> None:
     args = parse_args()
     artifact_dir = Path(args.artifact_dir)
     competition_dir = Path(args.competition_dir)
     working_dir = Path(args.working_dir)
     working_dir.mkdir(parents=True, exist_ok=True)
+    runtime_dir = stage_artifacts(artifact_dir, working_dir / "_teacher_runtime")
 
-    infer_script = artifact_dir / "infer_teacher_kaggle.py"
-    teacher_manifest_json = artifact_dir / "teacher_manifest.json"
+    infer_script = runtime_dir / "infer_teacher_kaggle.py"
+    teacher_manifest_json = runtime_dir / "teacher_manifest.json"
     test_dir = competition_dir / "test_soundscapes"
     sample_submission = competition_dir / "sample_submission.csv"
 

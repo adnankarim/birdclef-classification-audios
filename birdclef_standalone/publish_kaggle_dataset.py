@@ -15,6 +15,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--title", required=True)
     parser.add_argument("--version_message", default="Update dataset")
     parser.add_argument("--license_name", default="CC0-1.0")
+    parser.add_argument("--dir_mode", choices=["skip", "zip", "tar"], default="zip")
     parser.add_argument("--create", action="store_true", help="Force dataset creation instead of versioning.")
     return parser.parse_args()
 
@@ -56,12 +57,12 @@ def main() -> None:
     ensure_metadata(dataset_dir, dataset_id=args.dataset_id, title=args.title, license_name=args.license_name)
 
     if args.create:
-        run_kaggle(["datasets", "create", "-p", str(dataset_dir)])
+        run_kaggle(["datasets", "create", "-p", str(dataset_dir), "--dir-mode", args.dir_mode])
     else:
         try:
-            run_kaggle(["datasets", "version", "-p", str(dataset_dir), "-m", args.version_message])
+            run_kaggle(["datasets", "version", "-p", str(dataset_dir), "-m", args.version_message, "--dir-mode", args.dir_mode])
         except RuntimeError:
-            run_kaggle(["datasets", "create", "-p", str(dataset_dir)])
+            run_kaggle(["datasets", "create", "-p", str(dataset_dir), "--dir-mode", args.dir_mode])
 
 
 if __name__ == "__main__":
