@@ -46,6 +46,13 @@ def main() -> None:
 
     onnx_path = output_dir / "student.onnx"
     dummy = torch.randn(1, 1, params.n_mels, params.window_num_frames, dtype=torch.float32)
+    try:
+        import onnxscript  # noqa: F401
+    except ModuleNotFoundError as exc:
+        raise ModuleNotFoundError(
+            "PyTorch ONNX export requires `onnxscript` in this environment. "
+            "Install it with `python3 -m pip install onnxscript` or reinstall from requirements.txt."
+        ) from exc
     torch.onnx.export(
         model,
         dummy,
@@ -88,4 +95,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
