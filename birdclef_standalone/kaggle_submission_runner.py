@@ -66,6 +66,13 @@ def run_infer(command: list[str]) -> None:
     subprocess.run(command, check=True)
 
 
+def write_placeholder_submission(sample_submission: Path, output_path: Path) -> None:
+    submission = pd.read_csv(sample_submission)
+    score_columns = [column for column in submission.columns if column != "row_id"]
+    submission[score_columns] = 0.0
+    submission.to_csv(output_path, index=False)
+
+
 def main() -> None:
     args = parse_args()
     ensure_onnxruntime(args.wheel_path)
@@ -111,6 +118,7 @@ def main() -> None:
 
     dryrun_manifest = working_dir / "dryrun_manifest.csv"
     dryrun_predictions = working_dir / "dryrun_predictions.csv"
+    submission_path = working_dir / "submission.csv"
     dryrun = pd.DataFrame(
         {
             "soundscape_id": [path.stem for path in train_files],
@@ -133,8 +141,10 @@ def main() -> None:
             str(dryrun_predictions),
         ]
     )
+    write_placeholder_submission(sample_submission, submission_path)
     print(f"Dry run complete: {dryrun_predictions}")
-    print("submission.csv will only be written during Kaggle's hidden rerun.")
+    print(f"Wrote placeholder {submission_path} for notebook submission compatibility.")
+    print("Kaggle's hidden rerun should overwrite submission.csv with real predictions.")
 
 
 if __name__ == "__main__":
