@@ -11,6 +11,7 @@ Files:
 - `train_student.py`
 - `export_int8.py`
 - `infer_kaggle.py`
+- `kaggle_submission_runner.py`
 - `birdclef/`
 
 Expected workflow:
@@ -64,6 +65,11 @@ python3 package_kaggle_artifacts.py \
   --class_list_path birdclef_prepared/classes.txt \
   --output_dir final_artifacts \
   --zip
+
+python3 kaggle_submission_runner.py \
+  --artifact_dir /kaggle/input/YOUR_DATASET_NAME \
+  --competition_dir /kaggle/input/competitions/birdclef-2026 \
+  --wheel_path /kaggle/input/YOUR_WHEEL_DATASET/onnxruntime-*.whl
 ```
 
 Notes:

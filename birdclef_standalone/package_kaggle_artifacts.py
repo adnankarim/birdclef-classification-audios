@@ -15,6 +15,7 @@ Files:
 - student.int8.onnx
 - classes.txt
 - infer_kaggle.py
+- kaggle_submission_runner.py
 - dataset.py
 - birdclef/
 
@@ -28,23 +29,20 @@ Cell 1
 Cell 2
 ------
 ARTIFACT_DIR = "/kaggle/input/YOUR_DATASET_NAME"
-COMP_DIR = "/kaggle/input/birdclef-2026"
+COMP_DIR = "/kaggle/input/competitions/birdclef-2026"
 
 Cell 3
 ------
-!python3 {ARTIFACT_DIR}/infer_kaggle.py \
-  --model_path {ARTIFACT_DIR}/student.int8.onnx \
-  --class_list_path {ARTIFACT_DIR}/classes.txt \
-  --audio_dir {COMP_DIR}/test_soundscapes \
-  --sample_submission_csv {COMP_DIR}/sample_submission.csv \
-  --output_csv submission.csv
+!python3 {ARTIFACT_DIR}/kaggle_submission_runner.py \
+  --artifact_dir {ARTIFACT_DIR} \
+  --competition_dir {COMP_DIR} \
+  --wheel_path /kaggle/input/YOUR_WHEEL_DATASET/onnxruntime-*.whl
 
 Cell 4
 ------
-import pandas as pd
-sub = pd.read_csv("submission.csv")
-print(sub.shape)
-sub.head()
+from pathlib import Path
+print("submission:", Path("/kaggle/working/submission.csv").exists())
+print("dryrun:", Path("/kaggle/working/dryrun_predictions.csv").exists())
 
 Replace YOUR_DATASET_NAME with the actual Kaggle dataset folder name shown in
 Cell 1.
@@ -69,6 +67,11 @@ def parse_args() -> argparse.Namespace:
         "--infer_script_path",
         default="infer_kaggle.py",
         help="Path to infer_kaggle.py.",
+    )
+    parser.add_argument(
+        "--runner_script_path",
+        default="kaggle_submission_runner.py",
+        help="Path to kaggle_submission_runner.py.",
     )
     parser.add_argument(
         "--dataset_module_path",
@@ -112,6 +115,7 @@ def main() -> None:
     model_path = require_file(args.model_path, "Model")
     class_list_path = require_file(args.class_list_path, "Class list")
     infer_script_path = require_file(args.infer_script_path, "Inference script")
+    runner_script_path = require_file(args.runner_script_path, "Runner script")
     dataset_module_path = require_file(args.dataset_module_path, "Dataset module")
     package_dir = require_dir(args.package_dir, "birdclef package")
 
@@ -121,6 +125,7 @@ def main() -> None:
     shutil.copy2(model_path, output_dir / "student.int8.onnx")
     shutil.copy2(class_list_path, output_dir / "classes.txt")
     shutil.copy2(infer_script_path, output_dir / "infer_kaggle.py")
+    shutil.copy2(runner_script_path, output_dir / "kaggle_submission_runner.py")
     shutil.copy2(dataset_module_path, output_dir / "dataset.py")
     packaged_module_dir = output_dir / "birdclef"
     if packaged_module_dir.exists():
@@ -129,7 +134,14 @@ def main() -> None:
     (output_dir / "README.txt").write_text(README_TEXT, encoding="utf-8")
 
     print(f"Wrote Kaggle artifacts to: {output_dir}")
-    for filename in ["student.int8.onnx", "classes.txt", "infer_kaggle.py", "dataset.py", "README.txt"]:
+    for filename in [
+        "student.int8.onnx",
+        "classes.txt",
+        "infer_kaggle.py",
+        "kaggle_submission_runner.py",
+        "dataset.py",
+        "README.txt",
+    ]:
         file_path = output_dir / filename
         print(f"- {file_path} ({file_path.stat().st_size} bytes)")
     print(f"- {packaged_module_dir} (package directory)")
