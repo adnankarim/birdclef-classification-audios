@@ -127,16 +127,10 @@ def main() -> None:
 
     sample_submission: pd.DataFrame | None = None
     sample_schedule: dict[str, list[tuple[str, float]]] | None = None
+    sample_columns: list[str] | None = None
     if args.sample_submission_csv:
         sample_submission, sample_schedule = load_sample_schedule(args.sample_submission_csv)
         sample_columns = [column for column in sample_submission.columns if column != "row_id"]
-        missing_from_model = [column for column in sample_columns if column not in classes]
-        extra_in_model = [column for column in classes if column not in sample_columns]
-        if missing_from_model or extra_in_model:
-            raise ValueError(
-                "class_list_path does not match sample_submission columns. "
-                f"Missing from model: {missing_from_model[:10]}; extra in model: {extra_in_model[:10]}"
-            )
 
     session = ort.InferenceSession(str(args.model_path), providers=["CPUExecutionProvider"])
     target_soundscape_ids = set(sample_schedule) if sample_schedule is not None else None
@@ -172,14 +166,21 @@ def main() -> None:
         submission = sample_submission[["row_id"]].merge(submission, on="row_id", how="left")
         if submission["row_id"].duplicated().any():
             raise ValueError("Duplicate row_id values were produced during inference.")
-        if submission.isna().any().any():
-            missing_row_ids = submission.loc[submission.isna().any(axis=1), "row_id"].tolist()
+        predicted_columns = [column for column in classes if column in submission.columns]
+        if not predicted_columns:
+            raise ValueError("None of the model output classes are present in sample_submission columns.")
+        missing_row_mask = submission[predicted_columns].isna().any(axis=1)
+        if missing_row_mask.any():
+            missing_row_ids = submission.loc[missing_row_mask, "row_id"].tolist()
             raise ValueError(
                 "Inference did not produce predictions for all sample_submission rows: "
                 + ", ".join(missing_row_ids[:10])
                 + (" ..." if len(missing_row_ids) > 10 else "")
             )
-        ordered_columns = ["row_id"] + [column for column in sample_submission.columns if column != "row_id"]
+        for column in sample_columns:
+            if column not in submission.columns:
+                submission[column] = 0.0
+        ordered_columns = ["row_id"] + sample_columns
         submission = submission[ordered_columns]
     else:
         submission = submission[["row_id"] + classes]
