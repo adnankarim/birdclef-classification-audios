@@ -67,6 +67,18 @@ def require_dir(path_str: str, label: str) -> Path:
     return path
 
 
+def resolve_checkpoint_path(raw_path: str | Path, manifest_dir: Path) -> Path:
+    checkpoint_path = Path(raw_path)
+    if checkpoint_path.is_absolute():
+        return checkpoint_path
+    if checkpoint_path.is_file():
+        return checkpoint_path.resolve()
+    candidate = (manifest_dir / checkpoint_path).resolve()
+    if candidate.is_file():
+        return candidate
+    raise FileNotFoundError(f"Teacher checkpoint not found: {raw_path}")
+
+
 def main() -> None:
     args = parse_args()
     teacher_manifest_path = require_file(args.teacher_manifest_json, "Teacher manifest")
@@ -89,9 +101,7 @@ def main() -> None:
         new_teachers = []
         for teacher in fold["teachers"]:
             new_teacher = dict(teacher)
-            checkpoint_path = Path(teacher["checkpoint_path"])
-            if not checkpoint_path.is_absolute():
-                checkpoint_path = source_manifest_dir / checkpoint_path
+            checkpoint_path = resolve_checkpoint_path(teacher["checkpoint_path"], source_manifest_dir)
             relative_checkpoint = Path(f"fold_{fold['fold']}") / checkpoint_path.name
             target_checkpoint = output_dir / relative_checkpoint
             target_checkpoint.parent.mkdir(parents=True, exist_ok=True)

@@ -135,6 +135,18 @@ def build_model(checkpoint: dict) -> tuple[torch.nn.Module, bool]:
     return model, bool(checkpoint.get("use_mil", False))
 
 
+def resolve_checkpoint_path(raw_path: str | Path, manifest_dir: Path) -> Path:
+    checkpoint_path = Path(raw_path)
+    if checkpoint_path.is_absolute():
+        return checkpoint_path
+    if checkpoint_path.is_file():
+        return checkpoint_path.resolve()
+    candidate = (manifest_dir / checkpoint_path).resolve()
+    if candidate.is_file():
+        return candidate
+    raise FileNotFoundError(f"Teacher checkpoint not found: {raw_path}")
+
+
 def load_teacher_models(teacher_manifest_json: str | Path, device: torch.device) -> tuple[list[str], AudioParams, list[tuple[torch.nn.Module, bool]]]:
     teacher_manifest = load_json(teacher_manifest_json)
     classes = teacher_manifest["classes"]
@@ -145,9 +157,7 @@ def load_teacher_models(teacher_manifest_json: str | Path, device: torch.device)
     models: list[tuple[torch.nn.Module, bool]] = []
     for fold in teacher_manifest["folds"]:
         for teacher in fold["teachers"]:
-            checkpoint_path = Path(teacher["checkpoint_path"])
-            if not checkpoint_path.is_absolute():
-                checkpoint_path = manifest_dir / checkpoint_path
+            checkpoint_path = resolve_checkpoint_path(teacher["checkpoint_path"], manifest_dir)
             checkpoint = load_checkpoint(checkpoint_path, map_location="cpu")
             model, use_mil = build_model(checkpoint)
             model.to(device)
