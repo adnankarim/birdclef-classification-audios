@@ -68,7 +68,7 @@ def build_audio_dir_manifest(audio_dir: str | Path) -> pd.DataFrame:
         if path.suffix.lower() not in DEFAULT_AUDIO_EXTENSIONS:
             continue
         rows.append({"soundscape_id": path.stem, "audio_path": str(path)})
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows, columns=["soundscape_id", "audio_path"])
 
 
 def normalize_training_metadata(

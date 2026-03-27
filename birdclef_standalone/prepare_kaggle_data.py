@@ -167,7 +167,14 @@ def main() -> None:
         raise FileNotFoundError(
             "Could not find a test audio directory. Expected one of: " + ", ".join(TEST_AUDIO_DIR_CANDIDATES)
         )
-    build_audio_dir_manifest(test_audio_dir).to_csv(output_dir / "test_metadata.csv", index=False)
+    test_manifest = build_audio_dir_manifest(test_audio_dir)
+    if test_manifest.empty:
+        raise RuntimeError(
+            f"Found test audio directory at {test_audio_dir}, but no audio files were discovered under it. "
+            "This usually means the downloaded competition files do not include the test soundscapes for local inference. "
+            "Run inference in the Kaggle competition notebook environment or point infer_kaggle.py at the actual test audio directory."
+        )
+    test_manifest.to_csv(output_dir / "test_metadata.csv", index=False)
 
     sample_submission = find_first_existing(competition_root, ("sample_submission.csv",), want_dir=False)
     if sample_submission is None:

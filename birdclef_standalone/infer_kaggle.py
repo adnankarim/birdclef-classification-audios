@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import onnxruntime as ort
 import pandas as pd
+from pandas.errors import EmptyDataError
 
 from birdclef.audio import AudioParams, compute_logmel, iter_window_frames, load_audio_mono, window_spectrogram
 from birdclef.utils import file_level_smoothing, temporal_smoothing
@@ -56,7 +57,13 @@ def load_test_manifest(args: argparse.Namespace, target_soundscape_ids: set[str]
             audio_dir = candidate
 
     if args.test_csv:
-        manifest = normalize_inference_manifest(pd.read_csv(args.test_csv), audio_dir=audio_dir)
+        try:
+            manifest = normalize_inference_manifest(pd.read_csv(args.test_csv), audio_dir=audio_dir)
+        except EmptyDataError as exc:
+            raise ValueError(
+                f"{args.test_csv} is empty. No test audio manifest is available for inference. "
+                "Regenerate it from a real test audio directory or pass --audio_dir directly."
+            ) from exc
     elif audio_dir is not None:
         manifest = build_audio_dir_manifest(audio_dir)
     else:
