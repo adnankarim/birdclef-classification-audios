@@ -15,6 +15,8 @@ Files:
 - student.int8.onnx
 - classes.txt
 - infer_kaggle.py
+- dataset.py
+- birdclef/
 
 Kaggle notebook cells:
 
@@ -69,6 +71,16 @@ def parse_args() -> argparse.Namespace:
         help="Path to infer_kaggle.py.",
     )
     parser.add_argument(
+        "--dataset_module_path",
+        default="dataset.py",
+        help="Path to dataset.py used by infer_kaggle.py.",
+    )
+    parser.add_argument(
+        "--package_dir",
+        default="birdclef",
+        help="Path to the local birdclef package directory.",
+    )
+    parser.add_argument(
         "--output_dir",
         default="final_artifacts",
         help="Directory to write the Kaggle upload bundle.",
@@ -88,11 +100,20 @@ def require_file(path_str: str, label: str) -> Path:
     return path
 
 
+def require_dir(path_str: str, label: str) -> Path:
+    path = Path(path_str)
+    if not path.is_dir():
+        raise FileNotFoundError(f"{label} not found: {path}")
+    return path
+
+
 def main() -> None:
     args = parse_args()
     model_path = require_file(args.model_path, "Model")
     class_list_path = require_file(args.class_list_path, "Class list")
     infer_script_path = require_file(args.infer_script_path, "Inference script")
+    dataset_module_path = require_file(args.dataset_module_path, "Dataset module")
+    package_dir = require_dir(args.package_dir, "birdclef package")
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -100,12 +121,18 @@ def main() -> None:
     shutil.copy2(model_path, output_dir / "student.int8.onnx")
     shutil.copy2(class_list_path, output_dir / "classes.txt")
     shutil.copy2(infer_script_path, output_dir / "infer_kaggle.py")
+    shutil.copy2(dataset_module_path, output_dir / "dataset.py")
+    packaged_module_dir = output_dir / "birdclef"
+    if packaged_module_dir.exists():
+        shutil.rmtree(packaged_module_dir)
+    shutil.copytree(package_dir, packaged_module_dir, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     (output_dir / "README.txt").write_text(README_TEXT, encoding="utf-8")
 
     print(f"Wrote Kaggle artifacts to: {output_dir}")
-    for filename in ["student.int8.onnx", "classes.txt", "infer_kaggle.py", "README.txt"]:
+    for filename in ["student.int8.onnx", "classes.txt", "infer_kaggle.py", "dataset.py", "README.txt"]:
         file_path = output_dir / filename
         print(f"- {file_path} ({file_path.stat().st_size} bytes)")
+    print(f"- {packaged_module_dir} (package directory)")
 
     if args.zip:
         archive_path = shutil.make_archive(str(output_dir), "zip", root_dir=output_dir)
