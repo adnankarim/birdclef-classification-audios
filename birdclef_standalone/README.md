@@ -11,9 +11,13 @@ Files:
 - `train_student.py`
 - `export_int8.py`
 - `infer_kaggle.py`
+- `infer_teacher_kaggle.py`
 - `compare_onnx_models.py`
 - `compare_teacher_student_models.py`
 - `kaggle_submission_runner.py`
+- `teacher_kaggle_submission_runner.py`
+- `package_teacher_kaggle_artifacts.py`
+- `publish_kaggle_dataset.py`
 - `birdclef/`
 
 Expected workflow:
@@ -68,6 +72,24 @@ python3 package_kaggle_artifacts.py \
   --output_dir final_artifacts \
   --zip
 
+python3 package_teacher_kaggle_artifacts.py \
+  --teacher_manifest_json outputs/birdclef_teachers/teacher_manifest.json \
+  --class_list_path birdclef_prepared/classes.txt \
+  --output_dir teacher_kaggle_artifacts \
+  --zip
+
+python3 publish_kaggle_dataset.py \
+  --dataset_dir teacher_kaggle_artifacts \
+  --dataset_id YOUR_USERNAME/birdclef-teacher-artifacts \
+  --title "BirdCLEF Teacher Artifacts" \
+  --version_message "Teacher submission bundle"
+
+python3 infer_teacher_kaggle.py \
+  --teacher_manifest_json outputs/birdclef_teachers/teacher_manifest.json \
+  --audio_dir /kaggle/input/competitions/birdclef-2026/test_soundscapes \
+  --sample_submission_csv /kaggle/input/competitions/birdclef-2026/sample_submission.csv \
+  --output_csv submission.csv
+
 python3 compare_onnx_models.py \
   --fp32_model_path outputs/birdclef_export/student.onnx \
   --int8_model_path outputs/birdclef_export/student.int8.onnx \
@@ -92,6 +114,11 @@ python3 kaggle_submission_runner.py \
   --artifact_dir /kaggle/input/YOUR_DATASET_NAME \
   --competition_dir /kaggle/input/competitions/birdclef-2026 \
   --wheel_path /kaggle/input/YOUR_WHEEL_DATASET/onnxruntime-*.whl
+
+python3 teacher_kaggle_submission_runner.py \
+  --artifact_dir /kaggle/input/YOUR_TEACHER_DATASET \
+  --competition_dir /kaggle/input/competitions/birdclef-2026 \
+  --device cpu
 ```
 
 Notes:
