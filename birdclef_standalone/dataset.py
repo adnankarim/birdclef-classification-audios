@@ -62,7 +62,7 @@ def _resolve_audio_path(value: object, audio_base_dir: str | Path | None = None)
 def build_audio_dir_manifest(audio_dir: str | Path) -> pd.DataFrame:
     audio_dir = Path(audio_dir)
     rows = []
-    for path in sorted(audio_dir.glob("*")):
+    for path in sorted(audio_dir.rglob("*")):
         if not path.is_file():
             continue
         if path.suffix.lower() not in DEFAULT_AUDIO_EXTENSIONS:
