@@ -39,6 +39,12 @@ def parse_args() -> argparse.Namespace:
         default="cpu",
         help="Torch device for teacher inference.",
     )
+    parser.add_argument(
+        "--max_teachers",
+        type=int,
+        default=3,
+        help="Use only the top-N efficientnet teachers by val_loss.",
+    )
     return parser.parse_args()
 
 
@@ -108,6 +114,8 @@ def main() -> None:
                 str(submission_path),
                 "--device",
                 args.device,
+                "--max_teachers",
+                str(args.max_teachers),
             ]
         )
         print(f"Wrote {submission_path}")
@@ -139,6 +147,8 @@ def main() -> None:
             str(dryrun_predictions),
             "--device",
             args.device,
+            "--max_teachers",
+            str(args.max_teachers),
         ]
     )
     write_placeholder_submission(sample_submission, submission_path)

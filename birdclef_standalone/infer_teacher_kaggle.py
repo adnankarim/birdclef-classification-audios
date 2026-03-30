@@ -27,6 +27,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--temporal_kernel", type=int, default=3)
     parser.add_argument("--file_smoothing_alpha", type=float, default=0.1)
+    parser.add_argument("--max_teachers", type=int, default=None, help="Use only the top-N efficientnet teachers by val_loss.")
     parser.add_argument("--device", default=None)
     return parser.parse_args()
 
@@ -147,21 +148,41 @@ def resolve_checkpoint_path(raw_path: str | Path, manifest_dir: Path) -> Path:
     raise FileNotFoundError(f"Teacher checkpoint not found: {raw_path}")
 
 
-def load_teacher_models(teacher_manifest_json: str | Path, device: torch.device) -> tuple[list[str], AudioParams, list[tuple[torch.nn.Module, bool]]]:
+def load_teacher_models(
+    teacher_manifest_json: str | Path,
+    device: torch.device,
+    max_teachers: int | None = None,
+) -> tuple[list[str], AudioParams, list[tuple[torch.nn.Module, bool]]]:
     teacher_manifest = load_json(teacher_manifest_json)
     classes = teacher_manifest["classes"]
     params = AudioParams(**teacher_manifest["audio_params"])
     manifest_path = Path(teacher_manifest_json).resolve()
     manifest_dir = manifest_path.parent
 
-    models: list[tuple[torch.nn.Module, bool]] = []
+    teacher_entries: list[dict[str, object]] = []
     for fold in teacher_manifest["folds"]:
         for teacher in fold["teachers"]:
-            checkpoint_path = resolve_checkpoint_path(teacher["checkpoint_path"], manifest_dir)
-            checkpoint = load_checkpoint(checkpoint_path, map_location="cpu")
-            model, use_mil = build_model(checkpoint)
-            model.to(device)
-            models.append((model, use_mil))
+            if teacher["model_type"] == "perch_mlp":
+                continue
+            teacher_entry = dict(teacher)
+            teacher_entry["fold"] = fold["fold"]
+            teacher_entries.append(teacher_entry)
+    teacher_entries.sort(key=lambda item: (float(item.get("val_loss", float("inf"))), str(item["checkpoint_path"])))
+    if max_teachers is not None:
+        teacher_entries = teacher_entries[:max_teachers]
+
+    models: list[tuple[torch.nn.Module, bool]] = []
+    for teacher in teacher_entries:
+        checkpoint_path = resolve_checkpoint_path(teacher["checkpoint_path"], manifest_dir)
+        checkpoint = load_checkpoint(checkpoint_path, map_location="cpu")
+        model, use_mil = build_model(checkpoint)
+        model.to(device)
+        print(
+            f"Loaded teacher fold={teacher['fold']} "
+            f"val_loss={float(teacher.get('val_loss', float('nan'))):.6f} "
+            f"path={checkpoint_path.name}"
+        )
+        models.append((model, use_mil))
     if not models:
         raise ValueError("No supported teacher checkpoints were found in teacher_manifest_json.")
     return classes, params, models
@@ -185,7 +206,11 @@ def infer_ensemble_probabilities(
 def main() -> None:
     args = parse_args()
     device = pick_device(args.device)
-    classes, params, models = load_teacher_models(args.teacher_manifest_json, device=device)
+    classes, params, models = load_teacher_models(
+        args.teacher_manifest_json,
+        device=device,
+        max_teachers=args.max_teachers,
+    )
 
     if not args.sample_submission_csv and args.competition_dir:
         candidate = Path(args.competition_dir) / "sample_submission.csv"

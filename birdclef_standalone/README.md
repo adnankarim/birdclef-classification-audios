@@ -118,6 +118,7 @@ python3 kaggle_submission_runner.py \
 python3 teacher_kaggle_submission_runner.py \
   --artifact_dir /kaggle/input/YOUR_TEACHER_DATASET \
   --competition_dir /kaggle/input/competitions/birdclef-2026 \
+  --max_teachers 3 \
   --device cpu
 ```
 
