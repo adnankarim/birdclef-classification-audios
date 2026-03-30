@@ -223,6 +223,51 @@ class PerchMLPTeacher(nn.Module):
         return {"clip_logits": self.net(embeddings)}
 
 
+class PerchTemporalStudent(nn.Module):
+    def __init__(
+        self,
+        embedding_dim: int,
+        num_classes: int,
+        hidden_dim: int = 768,
+        num_heads: int = 8,
+        num_layers: int = 4,
+        dropout: float = 0.2,
+        max_positions: int = 32,
+    ):
+        super().__init__()
+        self.input_proj = nn.Linear(embedding_dim, hidden_dim)
+        self.position_embed = nn.Embedding(max_positions, hidden_dim)
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=hidden_dim,
+            nhead=num_heads,
+            dim_feedforward=hidden_dim * 4,
+            dropout=dropout,
+            activation="gelu",
+            batch_first=True,
+            norm_first=True,
+        )
+        self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        self.norm = nn.LayerNorm(hidden_dim)
+        self.dropout = nn.Dropout(dropout)
+        self.framewise_head = nn.Linear(hidden_dim, num_classes)
+
+    def forward(self, embeddings: torch.Tensor, valid_mask: torch.Tensor | None = None) -> dict[str, torch.Tensor]:
+        if embeddings.ndim != 3:
+            raise ValueError(f"Expected [batch, time, dim] embeddings, got {tuple(embeddings.shape)}")
+        positions = torch.arange(embeddings.shape[1], device=embeddings.device)
+        x = self.input_proj(embeddings) + self.position_embed(positions)[None, :, :]
+        key_padding_mask = None
+        if valid_mask is not None:
+            key_padding_mask = ~valid_mask.bool()
+        encoded = self.encoder(x, src_key_padding_mask=key_padding_mask)
+        encoded = self.norm(encoded)
+        frame_logits = self.framewise_head(self.dropout(encoded))
+        outputs = {"frame_logits": frame_logits}
+        pooled_logits = linear_softmax_pooling(frame_logits)
+        outputs["pooled_logits"] = pooled_logits
+        return outputs
+
+
 class StudentExportWrapper(nn.Module):
     def __init__(self, model: nn.Module):
         super().__init__()

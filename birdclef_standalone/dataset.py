@@ -313,6 +313,86 @@ class BirdCLEFWindowDataset(Dataset):
         return sample
 
 
+class BirdCLEFPerchSequenceDataset(Dataset):
+    def __init__(
+        self,
+        window_manifest: pd.DataFrame,
+        classes: list[str],
+        pseudo_label_columns: list[str] | None = None,
+        max_windows: int | None = None,
+    ):
+        self.window_manifest = window_manifest.reset_index(drop=True)
+        self.classes = classes
+        self.class_to_idx = {name: idx for idx, name in enumerate(classes)}
+        self.pseudo_label_columns = pseudo_label_columns or []
+        grouped = []
+        inferred_max_windows = 0
+        for soundscape_id, group in self.window_manifest.groupby("soundscape_id", sort=False):
+            ordered = group.sort_values("window_idx").reset_index(drop=True)
+            if ordered["perch_embedding_path"].fillna("").astype(str).eq("").all():
+                raise ValueError(f"Missing perch_embedding_path for soundscape_id={soundscape_id!r}.")
+            grouped.append((soundscape_id, ordered))
+            inferred_max_windows = max(inferred_max_windows, int(ordered["window_idx"].max()) + 1)
+        self.groups = grouped
+        self.max_windows = max_windows or inferred_max_windows
+        if self.max_windows <= 0:
+            raise ValueError("BirdCLEFPerchSequenceDataset requires at least one valid window.")
+
+    @staticmethod
+    @lru_cache(maxsize=2048)
+    def _load_embedding(path: str) -> torch.Tensor:
+        array = np.load(path)
+        return torch.tensor(array, dtype=torch.float32)
+
+    def __len__(self) -> int:
+        return len(self.groups)
+
+    def __getitem__(self, index: int) -> dict[str, Any]:
+        soundscape_id, group = self.groups[index]
+        perch_path = str(group.iloc[0].perch_embedding_path)
+        embeddings = self._load_embedding(perch_path)
+        if embeddings.ndim != 2:
+            raise ValueError(f"Expected 2D perch embeddings for {perch_path}, got shape {tuple(embeddings.shape)}")
+        if embeddings.shape[0] < self.max_windows:
+            padding = torch.zeros(self.max_windows - embeddings.shape[0], embeddings.shape[1], dtype=embeddings.dtype)
+            embeddings = torch.cat([embeddings, padding], dim=0)
+        elif embeddings.shape[0] > self.max_windows:
+            embeddings = embeddings[: self.max_windows]
+
+        sequence_embeddings = embeddings.clone()
+        hard_targets = torch.zeros(self.max_windows, len(self.classes), dtype=torch.float32)
+        valid_mask = torch.zeros(self.max_windows, dtype=torch.bool)
+        soft_targets = torch.zeros(self.max_windows, len(self.classes), dtype=torch.float32) if self.pseudo_label_columns else None
+        sample: dict[str, Any] = {
+            "perch_embeddings": sequence_embeddings,
+            "hard_targets": hard_targets,
+            "valid_mask": valid_mask,
+            "soundscape_id": soundscape_id,
+        }
+
+        for row in group.itertuples(index=False):
+            window_idx = int(row.window_idx)
+            if window_idx < 0 or window_idx >= self.max_windows:
+                continue
+            hard_target = torch.tensor(
+                encode_multilabels(normalize_labels(row.labels), self.class_to_idx),
+                dtype=torch.float32,
+            )
+            hard_targets[window_idx] = hard_target
+            valid_mask[window_idx] = True
+            if soft_targets is not None:
+                row_soft = np.asarray([getattr(row, column) for column in self.pseudo_label_columns], dtype=np.float32)
+                hard_target_np = hard_target.numpy()
+                if np.isnan(row_soft).any():
+                    row_soft = np.where(np.isnan(row_soft), hard_target_np, row_soft)
+                row_soft = np.clip(row_soft, 0.0, 1.0)
+                soft_targets[window_idx] = torch.tensor(row_soft, dtype=torch.float32)
+
+        if soft_targets is not None:
+            sample["soft_targets"] = soft_targets
+        return sample
+
+
 def save_class_list(classes: list[str], path: str | Path) -> None:
     with open(path, "w", encoding="utf-8") as handle:
         for label in classes:

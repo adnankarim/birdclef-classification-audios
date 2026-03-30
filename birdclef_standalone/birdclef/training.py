@@ -76,6 +76,35 @@ def train_perch_epoch(
     return EpochMetrics(loss=float(np.mean(losses)))
 
 
+def train_perch_sequence_student_epoch(
+    model: nn.Module,
+    loader: DataLoader,
+    optimizer: torch.optim.Optimizer,
+    device: torch.device,
+    distillation_loss: DistillationLoss | None = None,
+) -> EpochMetrics:
+    model.train()
+    criterion = distillation_loss or DistillationLoss()
+    losses: list[float] = []
+    for batch in tqdm(loader, leave=False):
+        batch = move_batch_to_device(batch, device)
+        outputs = model(batch["perch_embeddings"], valid_mask=batch["valid_mask"])
+        logits = outputs["frame_logits"]
+        valid_mask = batch["valid_mask"].bool()
+        if not valid_mask.any():
+            continue
+        hard_targets = batch["hard_targets"][valid_mask]
+        soft_targets = batch.get("soft_targets")
+        if soft_targets is not None:
+            soft_targets = soft_targets[valid_mask]
+        loss = criterion(logits[valid_mask], hard_targets, teacher_probs=soft_targets)
+        optimizer.zero_grad(set_to_none=True)
+        loss.backward()
+        optimizer.step()
+        losses.append(float(loss.detach().cpu().item()))
+    return EpochMetrics(loss=float(np.mean(losses)) if losses else float("nan"))
+
+
 @torch.no_grad()
 def evaluate_multilabel(
     model: nn.Module,
@@ -108,6 +137,46 @@ def evaluate_multilabel(
         EpochMetrics(loss=float(np.mean(losses))),
         np.concatenate(all_probs, axis=0),
         np.concatenate(all_targets, axis=0),
+        soundscape_ids,
+        window_indices,
+    )
+
+
+@torch.no_grad()
+def evaluate_perch_sequence_multilabel(
+    model: nn.Module,
+    loader: DataLoader,
+    device: torch.device,
+) -> tuple[EpochMetrics, np.ndarray, np.ndarray, list[str], list[int]]:
+    model.eval()
+    criterion = DistillationLoss(hard_weight=1.0, soft_weight=0.0)
+    losses: list[float] = []
+    all_probs: list[np.ndarray] = []
+    all_targets: list[np.ndarray] = []
+    soundscape_ids: list[str] = []
+    window_indices: list[int] = []
+    for batch in tqdm(loader, leave=False):
+        batch = move_batch_to_device(batch, device)
+        outputs = model(batch["perch_embeddings"], valid_mask=batch["valid_mask"])
+        logits = outputs["frame_logits"]
+        valid_mask = batch["valid_mask"].bool()
+        if not valid_mask.any():
+            continue
+        valid_logits = logits[valid_mask]
+        valid_targets = batch["hard_targets"][valid_mask]
+        loss = criterion(valid_logits, valid_targets, teacher_probs=None)
+        losses.append(float(loss.detach().cpu().item()))
+        all_probs.append(torch.sigmoid(valid_logits).cpu().numpy())
+        all_targets.append(valid_targets.cpu().numpy())
+        for row_idx, soundscape_id in enumerate(batch["soundscape_id"]):
+            valid_indices = valid_mask[row_idx].nonzero(as_tuple=False).flatten().tolist()
+            soundscape_ids.extend([soundscape_id] * len(valid_indices))
+            window_indices.extend(valid_indices)
+    empty = np.zeros((0, 0), dtype=np.float32)
+    return (
+        EpochMetrics(loss=float(np.mean(losses)) if losses else float("nan")),
+        np.concatenate(all_probs, axis=0) if all_probs else empty,
+        np.concatenate(all_targets, axis=0) if all_targets else empty,
         soundscape_ids,
         window_indices,
     )
