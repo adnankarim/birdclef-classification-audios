@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 from birdclef.audio import AudioParams
 from birdclef.augmentations import AugmentationConfig, SpectrogramAugmenter
 from birdclef.losses import DistillationLoss
-from birdclef.models import EfficientNetV2SClassifier
+from birdclef.models import IMAGE_BACKBONE_NAMES, build_image_classifier, student_model_type
 from birdclef.training import evaluate_multilabel, save_checkpoint, train_student_epoch
 from birdclef.utils import ensure_dir, make_group_folds, pick_device, seed_everything
 from dataset import BirdCLEFWindowDataset, load_manifest, normalize_training_metadata, resolve_class_list
@@ -29,6 +29,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--num_folds", type=int, default=5)
     parser.add_argument("--validation_fold", type=int, default=0)
+    parser.add_argument("--backbone", choices=IMAGE_BACKBONE_NAMES, default="efficientnet_v2_s")
     parser.add_argument("--use_mil", action="store_true")
     parser.add_argument("--mixup_alpha", type=float, default=0.4)
     parser.add_argument("--hard_weight", type=float, default=1.0)
@@ -91,7 +92,12 @@ def main() -> None:
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=True)
     val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True)
 
-    model = EfficientNetV2SClassifier(num_classes=len(classes), pretrained=True, use_mil=args.use_mil).to(device)
+    model = build_image_classifier(
+        args.backbone,
+        num_classes=len(classes),
+        pretrained=True,
+        use_mil=args.use_mil,
+    ).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
     criterion = DistillationLoss(
         hard_weight=args.hard_weight,
@@ -116,7 +122,7 @@ def main() -> None:
             best_val_loss = val_metrics.loss
             best_payload = {
                 "model_state_dict": model.state_dict(),
-                "model_type": "efficientnet_v2_s_student",
+                "model_type": student_model_type(args.backbone),
                 "classes": classes,
                 "use_mil": args.use_mil,
                 "audio_params": vars(params),

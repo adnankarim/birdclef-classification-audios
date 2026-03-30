@@ -9,7 +9,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from birdclef.audio import AudioParams
-from birdclef.models import EfficientNetV2SClassifier, PerchMLPTeacher
+from birdclef.models import PerchMLPTeacher, build_image_classifier, is_supported_image_model_type
 from birdclef.training import load_checkpoint, predict_probabilities
 from birdclef.utils import average_probabilities, ensure_dir, load_json, pick_device, save_json
 from dataset import BirdCLEFWindowDataset, load_manifest
@@ -33,16 +33,9 @@ def parse_args() -> argparse.Namespace:
 def build_model(checkpoint: dict) -> tuple[torch.nn.Module, bool, bool]:
     classes = checkpoint["classes"]
     model_type = checkpoint["model_type"]
-    if model_type == "efficientnet_v2_s":
-        model = EfficientNetV2SClassifier(
-            num_classes=len(classes),
-            pretrained=False,
-            use_mil=bool(checkpoint.get("use_mil", False)),
-        )
-        model.load_state_dict(checkpoint["model_state_dict"])
-        return model, bool(checkpoint.get("use_mil", False)), False
-    if model_type == "efficientnet_v2_s_student":
-        model = EfficientNetV2SClassifier(
+    if is_supported_image_model_type(model_type):
+        model = build_image_classifier(
+            model_type,
             num_classes=len(classes),
             pretrained=False,
             use_mil=bool(checkpoint.get("use_mil", False)),

@@ -12,7 +12,7 @@ from sklearn.metrics import average_precision_score, roc_auc_score
 from torch.utils.data import DataLoader
 
 from birdclef.audio import AudioParams, compute_logmel, load_audio_mono
-from birdclef.models import EfficientNetV2SClassifier, PerchMLPTeacher
+from birdclef.models import PerchMLPTeacher, build_image_classifier, is_supported_image_model_type
 from birdclef.training import load_checkpoint, predict_probabilities
 from birdclef.utils import average_probabilities, encode_multilabels, normalize_labels, pick_device
 from dataset import BirdCLEFWindowDataset, load_manifest, normalize_training_metadata
@@ -68,8 +68,9 @@ def resolve_targets(metadata: pd.DataFrame, class_to_idx: dict[str, int]) -> pd.
 def build_model(checkpoint: dict) -> tuple[torch.nn.Module, bool, bool]:
     classes = checkpoint["classes"]
     model_type = checkpoint["model_type"]
-    if model_type in {"efficientnet_v2_s", "efficientnet_v2_s_student"}:
-        model = EfficientNetV2SClassifier(
+    if is_supported_image_model_type(model_type):
+        model = build_image_classifier(
+            model_type,
             num_classes=len(classes),
             pretrained=False,
             use_mil=bool(checkpoint.get("use_mil", False)),

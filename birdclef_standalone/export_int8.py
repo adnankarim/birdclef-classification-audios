@@ -9,7 +9,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from birdclef.audio import AudioParams
-from birdclef.models import EfficientNetV2SClassifier, StudentExportWrapper
+from birdclef.models import StudentExportWrapper, build_image_classifier
 from birdclef.training import load_checkpoint
 from birdclef.utils import ensure_dir
 from dataset import BirdCLEFWindowDataset, load_manifest
@@ -27,7 +27,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def build_model(checkpoint: dict) -> StudentExportWrapper:
-    model = EfficientNetV2SClassifier(
+    model = build_image_classifier(
+        checkpoint["model_type"],
         num_classes=len(checkpoint["classes"]),
         pretrained=False,
         use_mil=bool(checkpoint.get("use_mil", False)),

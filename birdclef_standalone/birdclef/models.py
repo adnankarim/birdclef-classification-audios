@@ -7,10 +7,18 @@ import numpy as np
 import soundfile as sf
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torchvision import models
 
 from birdclef.losses import linear_softmax_pooling
+
+
+IMAGE_BACKBONE_NAMES = (
+    "efficientnet_v2_s",
+    "efficientnet_v2_m",
+    "convnext_tiny",
+    "convnext_small",
+)
+IMAGE_MODEL_TYPES = IMAGE_BACKBONE_NAMES + tuple(f"{name}_student" for name in IMAGE_BACKBONE_NAMES)
 
 
 def _adapt_input_conv_to_single_channel(conv: nn.Conv2d) -> nn.Conv2d:
@@ -32,20 +40,62 @@ def _adapt_input_conv_to_single_channel(conv: nn.Conv2d) -> nn.Conv2d:
     return new_conv
 
 
-class EfficientNetV2SClassifier(nn.Module):
-    def __init__(self, num_classes: int, pretrained: bool = True, use_mil: bool = False, dropout: float = 0.2):
+def canonical_image_model_type(model_type: str) -> str:
+    if model_type.endswith("_student"):
+        return model_type[: -len("_student")]
+    return model_type
+
+
+def is_supported_image_model_type(model_type: str) -> bool:
+    return canonical_image_model_type(model_type) in IMAGE_BACKBONE_NAMES
+
+
+def student_model_type(backbone: str) -> str:
+    canonical = canonical_image_model_type(backbone)
+    if canonical not in IMAGE_BACKBONE_NAMES:
+        raise ValueError(f"Unsupported backbone={backbone!r}. Choices: {', '.join(IMAGE_BACKBONE_NAMES)}")
+    return f"{canonical}_student"
+
+
+class TorchvisionSpectrogramClassifier(nn.Module):
+    def __init__(
+        self,
+        backbone_name: str,
+        num_classes: int,
+        pretrained: bool = True,
+        use_mil: bool = False,
+        dropout: float = 0.2,
+    ):
         super().__init__()
-        weights = models.EfficientNet_V2_S_Weights.DEFAULT if pretrained else None
-        backbone = models.efficientnet_v2_s(weights=weights)
+        backbone_name = canonical_image_model_type(backbone_name)
+        if backbone_name == "efficientnet_v2_s":
+            weights = models.EfficientNet_V2_S_Weights.DEFAULT if pretrained else None
+            backbone = models.efficientnet_v2_s(weights=weights)
+            feature_dim = 1280
+        elif backbone_name == "efficientnet_v2_m":
+            weights = models.EfficientNet_V2_M_Weights.DEFAULT if pretrained else None
+            backbone = models.efficientnet_v2_m(weights=weights)
+            feature_dim = 1280
+        elif backbone_name == "convnext_tiny":
+            weights = models.ConvNeXt_Tiny_Weights.DEFAULT if pretrained else None
+            backbone = models.convnext_tiny(weights=weights)
+            feature_dim = 768
+        elif backbone_name == "convnext_small":
+            weights = models.ConvNeXt_Small_Weights.DEFAULT if pretrained else None
+            backbone = models.convnext_small(weights=weights)
+            feature_dim = 768
+        else:
+            raise ValueError(f"Unsupported backbone_name={backbone_name!r}. Choices: {', '.join(IMAGE_BACKBONE_NAMES)}")
+
         backbone.features[0][0] = _adapt_input_conv_to_single_channel(backbone.features[0][0])
+        self.backbone_name = backbone_name
         self.features = backbone.features
-        self.conv_head = backbone.classifier[0]
         self.pool = nn.AdaptiveAvgPool2d((1, 1))
         self.dropout = nn.Dropout(p=dropout)
-        self.classifier = nn.Linear(1280, num_classes)
+        self.classifier = nn.Linear(feature_dim, num_classes)
         self.use_mil = use_mil
         if use_mil:
-            self.framewise_head = nn.Conv1d(1280, num_classes, kernel_size=1)
+            self.framewise_head = nn.Conv1d(feature_dim, num_classes, kernel_size=1)
         else:
             self.framewise_head = None
 
@@ -60,6 +110,69 @@ class EfficientNetV2SClassifier(nn.Module):
             outputs["frame_logits"] = frame_logits
             outputs["pooled_logits"] = linear_softmax_pooling(frame_logits)
         return outputs
+
+
+class EfficientNetV2SClassifier(TorchvisionSpectrogramClassifier):
+    def __init__(self, num_classes: int, pretrained: bool = True, use_mil: bool = False, dropout: float = 0.2):
+        super().__init__(
+            backbone_name="efficientnet_v2_s",
+            num_classes=num_classes,
+            pretrained=pretrained,
+            use_mil=use_mil,
+            dropout=dropout,
+        )
+
+
+class EfficientNetV2MClassifier(TorchvisionSpectrogramClassifier):
+    def __init__(self, num_classes: int, pretrained: bool = True, use_mil: bool = False, dropout: float = 0.2):
+        super().__init__(
+            backbone_name="efficientnet_v2_m",
+            num_classes=num_classes,
+            pretrained=pretrained,
+            use_mil=use_mil,
+            dropout=dropout,
+        )
+
+
+class ConvNeXtTinyClassifier(TorchvisionSpectrogramClassifier):
+    def __init__(self, num_classes: int, pretrained: bool = True, use_mil: bool = False, dropout: float = 0.2):
+        super().__init__(
+            backbone_name="convnext_tiny",
+            num_classes=num_classes,
+            pretrained=pretrained,
+            use_mil=use_mil,
+            dropout=dropout,
+        )
+
+
+class ConvNeXtSmallClassifier(TorchvisionSpectrogramClassifier):
+    def __init__(self, num_classes: int, pretrained: bool = True, use_mil: bool = False, dropout: float = 0.2):
+        super().__init__(
+            backbone_name="convnext_small",
+            num_classes=num_classes,
+            pretrained=pretrained,
+            use_mil=use_mil,
+            dropout=dropout,
+        )
+
+
+def build_image_classifier(
+    model_type: str,
+    num_classes: int,
+    pretrained: bool = True,
+    use_mil: bool = False,
+    dropout: float = 0.2,
+) -> TorchvisionSpectrogramClassifier:
+    canonical = canonical_image_model_type(model_type)
+    if canonical == "efficientnet_v2_s":
+        return EfficientNetV2SClassifier(num_classes=num_classes, pretrained=pretrained, use_mil=use_mil, dropout=dropout)
+    if canonical == "efficientnet_v2_m":
+        return EfficientNetV2MClassifier(num_classes=num_classes, pretrained=pretrained, use_mil=use_mil, dropout=dropout)
+    if canonical == "convnext_tiny":
+        return ConvNeXtTinyClassifier(num_classes=num_classes, pretrained=pretrained, use_mil=use_mil, dropout=dropout)
+    if canonical == "convnext_small":
+        return ConvNeXtSmallClassifier(num_classes=num_classes, pretrained=pretrained, use_mil=use_mil, dropout=dropout)
+    raise ValueError(f"Unsupported model_type={model_type!r}. Choices: {', '.join(IMAGE_MODEL_TYPES)}")
 
 
 class PerchEmbeddingExtractor:
@@ -119,4 +232,3 @@ class StudentExportWrapper(nn.Module):
         outputs = self.model(x)
         logits = outputs.get("pooled_logits", outputs["clip_logits"])
         return torch.sigmoid(logits)
-

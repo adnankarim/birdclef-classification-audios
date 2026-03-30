@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 
 from birdclef.audio import AudioParams
 from birdclef.augmentations import AugmentationConfig, SpectrogramAugmenter
-from birdclef.models import EfficientNetV2SClassifier, PerchMLPTeacher
+from birdclef.models import IMAGE_BACKBONE_NAMES, PerchMLPTeacher, build_image_classifier
 from birdclef.training import (
     evaluate_multilabel,
     save_checkpoint,
@@ -33,6 +33,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--num_folds", type=int, default=5)
     parser.add_argument("--num_effnet_teachers", type=int, default=2)
+    parser.add_argument(
+        "--teacher_model_types",
+        nargs="*",
+        default=None,
+        choices=IMAGE_BACKBONE_NAMES,
+        help="Optional explicit list of image backbones to train per fold. Example: --teacher_model_types efficientnet_v2_m convnext_small",
+    )
     parser.add_argument("--train_perch_teacher", action="store_true")
     parser.add_argument("--use_mil", action="store_true")
     parser.add_argument("--mixup_alpha", type=float, default=0.4)
@@ -63,7 +70,7 @@ def build_noise_bank(
     return [noise_ds[idx]["inputs"] for idx in range(len(noise_ds))]
 
 
-def train_effnet_teacher(
+def train_image_teacher(
     train_df: pd.DataFrame,
     val_df: pd.DataFrame,
     classes: list[str],
@@ -72,6 +79,7 @@ def train_effnet_teacher(
     device: torch.device,
     output_path: Path,
     noise_bank: list[torch.Tensor],
+    model_type: str,
 ) -> dict:
     augmenter = SpectrogramAugmenter(AugmentationConfig())
     train_ds = BirdCLEFWindowDataset(
@@ -86,7 +94,12 @@ def train_effnet_teacher(
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=True)
     val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True)
 
-    model = EfficientNetV2SClassifier(num_classes=len(classes), pretrained=True, use_mil=args.use_mil).to(device)
+    model = build_image_classifier(
+        model_type,
+        num_classes=len(classes),
+        pretrained=True,
+        use_mil=args.use_mil,
+    ).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
 
     best_val_loss = float("inf")
@@ -105,7 +118,7 @@ def train_effnet_teacher(
             best_val_loss = val_metrics.loss
             best_payload = {
                 "model_state_dict": model.state_dict(),
-                "model_type": "efficientnet_v2_s",
+                "model_type": model_type,
                 "classes": classes,
                 "use_mil": args.use_mil,
                 "audio_params": vars(params),
@@ -115,7 +128,7 @@ def train_effnet_teacher(
             }
     assert best_payload is not None
     save_checkpoint(output_path, best_payload)
-    return {"checkpoint_path": str(output_path), "val_loss": best_val_loss, "model_type": "efficientnet_v2_s"}
+    return {"checkpoint_path": str(output_path), "val_loss": best_val_loss, "model_type": model_type}
 
 
 def train_perch_teacher(
@@ -197,6 +210,7 @@ def main() -> None:
         "audio_params": vars(params),
         "folds": [],
     }
+    teacher_model_types = args.teacher_model_types or ["efficientnet_v2_s"] * args.num_effnet_teachers
     for fold_idx, (train_idx, val_idx) in enumerate(folds):
         train_ids = set(file_metadata.iloc[train_idx]["soundscape_id"].tolist())
         val_ids = set(file_metadata.iloc[val_idx]["soundscape_id"].tolist())
@@ -205,9 +219,9 @@ def main() -> None:
         fold_dir = ensure_dir(output_dir / f"fold_{fold_idx}")
         fold_entry = {"fold": fold_idx, "teachers": []}
 
-        for teacher_idx in range(args.num_effnet_teachers):
-            checkpoint_path = fold_dir / f"efficientnet_teacher_{teacher_idx}.pth"
-            result = train_effnet_teacher(
+        for teacher_idx, model_type in enumerate(teacher_model_types):
+            checkpoint_path = fold_dir / f"{model_type}_teacher_{teacher_idx}.pth"
+            result = train_image_teacher(
                 train_df,
                 val_df,
                 classes,
@@ -216,6 +230,7 @@ def main() -> None:
                 device,
                 checkpoint_path,
                 noise_bank,
+                model_type,
             )
             fold_entry["teachers"].append(result)
 

@@ -10,7 +10,7 @@ import torch
 from pandas.errors import EmptyDataError
 
 from birdclef.audio import AudioParams, compute_logmel, iter_window_frames, load_audio_mono, window_spectrogram
-from birdclef.models import EfficientNetV2SClassifier
+from birdclef.models import build_image_classifier, is_supported_image_model_type
 from birdclef.training import load_checkpoint
 from birdclef.utils import average_probabilities, file_level_smoothing, load_json, pick_device, temporal_smoothing
 from dataset import build_audio_dir_manifest, normalize_inference_manifest
@@ -123,10 +123,11 @@ def build_model(checkpoint: dict) -> tuple[torch.nn.Module, bool]:
             "perch_mlp teacher checkpoints are not supported by infer_teacher_kaggle.py because "
             "they require Perch embeddings at inference time."
         )
-    if model_type not in {"efficientnet_v2_s", "efficientnet_v2_s_student"}:
+    if not is_supported_image_model_type(model_type):
         raise ValueError(f"Unsupported teacher model type: {model_type}")
 
-    model = EfficientNetV2SClassifier(
+    model = build_image_classifier(
+        model_type,
         num_classes=len(checkpoint["classes"]),
         pretrained=False,
         use_mil=bool(checkpoint.get("use_mil", False)),

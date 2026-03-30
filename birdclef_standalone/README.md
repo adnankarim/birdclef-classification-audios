@@ -122,11 +122,34 @@ python3 teacher_kaggle_submission_runner.py \
   --device cpu
 ```
 
+Stronger backbone examples:
+
+```bash
+python3 train_teachers.py \
+  --metadata_csv data/train_metadata.csv \
+  --window_manifest_csv birdclef_prepared/window_manifest.csv \
+  --class_list_path birdclef_prepared/classes.txt \
+  --output_dir outputs/birdclef_teachers_sota \
+  --teacher_model_types efficientnet_v2_m convnext_small \
+  --train_perch_teacher \
+  --use_mil
+
+python3 train_student.py \
+  --metadata_csv data/train_metadata.csv \
+  --labeled_window_manifest_csv birdclef_prepared/window_manifest.csv \
+  --pseudo_label_csv outputs/pseudo_round1/pseudo_labels_round1.csv \
+  --class_list_path birdclef_prepared/classes.txt \
+  --output_dir outputs/birdclef_student_convnext \
+  --backbone convnext_tiny \
+  --use_mil
+```
+
 Notes:
 - `prepare_kaggle_data.py` downloads the competition with the Kaggle CLI, extracts the archives, writes `data/train_metadata.csv`, writes `data/test_metadata.csv`, and copies `data/sample_submission.csv`.
 - The download step requires Kaggle API credentials to be configured for the current environment.
 - Raw Kaggle metadata is normalized into the standalone contract: `soundscape_id`, `audio_path`, and `labels`.
 - `infer_kaggle.py` uses `sample_submission.csv` as the authoritative row list when it is provided, so submission row IDs and column order match Kaggle exactly.
+- Supported image backbones are `efficientnet_v2_s`, `efficientnet_v2_m`, `convnext_tiny`, and `convnext_small`.
 - `--train_perch_teacher` requires separate Perch tooling and cached/window embedding support. If you enable it, run `preprocess.py` with `--compute_perch_embeddings`.
 - Optional grouped CV columns are `author`, `recordist`, and `site`.
 - Final submission inference requires real test audio. If your local environment only has `test_soundscapes/readme.txt`, build `final_artifacts` and run `infer_kaggle.py` inside a Kaggle notebook instead.
