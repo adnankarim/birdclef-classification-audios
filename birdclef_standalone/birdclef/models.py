@@ -183,7 +183,7 @@ class PerchEmbeddingExtractor:
     callers get a clear error instead of a silent fallback.
     """
 
-    def __init__(self):
+    def __init__(self, device: str | None = None):
         try:
             import bioacoustics_model_zoo as bmz  # type: ignore
         except ImportError as exc:
@@ -192,7 +192,8 @@ class PerchEmbeddingExtractor:
                 "user-supplied Perch embedding cache. Official Perch tooling is "
                 "published via google-research/perch and google-research/perch-hoplite."
             ) from exc
-        self._model = bmz.Perch2()
+        perch_device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self._model = bmz.Perch2(device=perch_device)
 
     def embed_windows(self, waveforms: list[np.ndarray], sample_rate: int) -> np.ndarray:
         with tempfile.TemporaryDirectory(prefix="perch_embed_") as temp_dir:
