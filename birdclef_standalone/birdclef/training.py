@@ -215,6 +215,35 @@ def predict_probabilities(
     }
 
 
+@torch.no_grad()
+def predict_perch_sequence_probabilities(
+    model: nn.Module,
+    loader: DataLoader,
+    device: torch.device,
+) -> dict[str, Any]:
+    model.eval()
+    probabilities: list[np.ndarray] = []
+    soundscape_ids: list[str] = []
+    window_indices: list[int] = []
+    for batch in tqdm(loader, leave=False):
+        batch = move_batch_to_device(batch, device)
+        outputs = model(batch["perch_embeddings"], valid_mask=batch["valid_mask"])
+        probs = torch.sigmoid(outputs["frame_logits"]).cpu().numpy()
+        valid_mask = batch["valid_mask"].cpu().numpy().astype(bool)
+        for row_idx, soundscape_id in enumerate(batch["soundscape_id"]):
+            indices = np.flatnonzero(valid_mask[row_idx])
+            if indices.size == 0:
+                continue
+            probabilities.append(probs[row_idx, indices])
+            soundscape_ids.extend([soundscape_id] * len(indices))
+            window_indices.extend(indices.tolist())
+    return {
+        "probabilities": np.concatenate(probabilities, axis=0),
+        "soundscape_id": soundscape_ids,
+        "window_idx": window_indices,
+    }
+
+
 def save_checkpoint(path: str | Path, payload: dict[str, Any]) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
