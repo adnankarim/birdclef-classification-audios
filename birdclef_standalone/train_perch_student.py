@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 import pandas as pd
 import torch
@@ -75,6 +76,44 @@ def resolve_embedding_dim(*frames: pd.DataFrame) -> int:
     )
 
 
+def backfill_perch_embedding_paths(
+    frame: pd.DataFrame,
+    *,
+    default_embedding_dir: Path,
+    reference_windows: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    result = frame.copy()
+    if "perch_embedding_path" not in result.columns:
+        result["perch_embedding_path"] = ""
+    result["perch_embedding_path"] = result["perch_embedding_path"].fillna("").astype(str)
+
+    if reference_windows is not None and {"soundscape_id", "window_idx", "perch_embedding_path"}.issubset(reference_windows.columns):
+        lookup = (
+            reference_windows[["soundscape_id", "window_idx", "perch_embedding_path"]]
+            .drop_duplicates(["soundscape_id", "window_idx"])
+            .rename(columns={"perch_embedding_path": "_perch_embedding_path_ref"})
+        )
+        result = result.merge(lookup, on=["soundscape_id", "window_idx"], how="left")
+        mask = result["perch_embedding_path"].eq("") & result["_perch_embedding_path_ref"].fillna("").astype(str).ne("")
+        result.loc[mask, "perch_embedding_path"] = result.loc[mask, "_perch_embedding_path_ref"].astype(str)
+        result = result.drop(columns=["_perch_embedding_path_ref"])
+
+    def infer_path(soundscape_id: object, current_path: object) -> str:
+        raw = str(current_path).strip()
+        if raw:
+            return raw
+        candidate = default_embedding_dir / f"{soundscape_id}.npy"
+        if candidate.is_file():
+            return str(candidate)
+        return ""
+
+    result["perch_embedding_path"] = [
+        infer_path(soundscape_id, perch_path)
+        for soundscape_id, perch_path in zip(result["soundscape_id"], result["perch_embedding_path"])
+    ]
+    return result
+
+
 def main() -> None:
     args = parse_args()
     seed_everything(args.seed)
@@ -87,8 +126,20 @@ def main() -> None:
         require_labels=False,
     )
     labeled_windows = load_manifest(args.labeled_window_manifest_csv)
+    default_embedding_dir = Path(args.labeled_window_manifest_csv).resolve().parent / "perch_embeddings"
+    labeled_windows = backfill_perch_embedding_paths(
+        labeled_windows,
+        default_embedding_dir=default_embedding_dir,
+    )
     classes = resolve_class_list(labeled_windows, args.class_list_path)
-    pseudo_frames = [load_manifest(path) for path in args.pseudo_label_csv]
+    pseudo_frames = [
+        backfill_perch_embedding_paths(
+            load_manifest(path),
+            default_embedding_dir=default_embedding_dir,
+            reference_windows=labeled_windows,
+        )
+        for path in args.pseudo_label_csv
+    ]
     pseudo_columns = [class_name for class_name in classes if pseudo_frames and class_name in pseudo_frames[0].columns]
 
     real_train_df, real_val_df = split_real_windows(
