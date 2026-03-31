@@ -370,18 +370,18 @@ class BirdCLEFPerchSequenceDataset(Dataset):
             "soundscape_id": soundscape_id,
         }
 
-        for row in group.itertuples(index=False):
-            window_idx = int(row.window_idx)
+        for _, row in group.iterrows():
+            window_idx = int(row["window_idx"])
             if window_idx < 0 or window_idx >= self.max_windows:
                 continue
             hard_target = torch.tensor(
-                encode_multilabels(normalize_labels(row.labels), self.class_to_idx),
+                encode_multilabels(normalize_labels(row["labels"]), self.class_to_idx),
                 dtype=torch.float32,
             )
             hard_targets[window_idx] = hard_target
             valid_mask[window_idx] = True
             if soft_targets is not None:
-                row_soft = np.asarray([getattr(row, column) for column in self.pseudo_label_columns], dtype=np.float32)
+                row_soft = row.loc[self.pseudo_label_columns].to_numpy(dtype=np.float32, copy=True)
                 hard_target_np = hard_target.numpy()
                 if np.isnan(row_soft).any():
                     row_soft = np.where(np.isnan(row_soft), hard_target_np, row_soft)
