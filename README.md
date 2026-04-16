@@ -97,6 +97,99 @@ birdclef/
     teacher_kaggle_submission_runner.py
 ```
 
+## System Diagrams
+
+### End-to-End Pipeline
+
+```mermaid
+flowchart TD
+    A["BirdCLEF+ 2026 data"] --> B["prepare_kaggle_data.py"]
+    B --> C["data/train_metadata.csv"]
+    C --> D["preprocess.py"]
+    D --> E["Log-mel spectrograms"]
+    D --> F["window_manifest.csv"]
+    D --> G["Perch embeddings (optional)"]
+
+    F --> H["train_teachers.py"]
+    E --> H
+    H --> I["teacher_manifest.json + teacher checkpoints"]
+    I --> J["generate_pseudolabels.py"]
+    F --> J
+    J --> K["Teacher pseudo labels"]
+
+    G --> L["train_perch_student.py"]
+    F --> L
+    K --> L
+    L --> M["perch_student_best.pth"]
+    M --> N["generate_perch_sequence_pseudolabels.py"]
+    G --> N
+    F --> N
+    N --> O["Perch pseudo labels"]
+
+    K --> P["blend_pseudolabels.py"]
+    O --> P
+    F --> P
+    P --> Q["Blended pseudo labels"]
+
+    E --> R["train_student.py"]
+    F --> R
+    K --> R
+    Q --> R
+    R --> S["student_best.pth"]
+
+    S --> T["evaluate_model.py"]
+    M --> T
+    T --> U["outputs/eval_runs/model_eval_log.csv"]
+
+    S --> V["export_int8.py"]
+    F --> V
+    V --> W["student.onnx"]
+    V --> X["student.int8.onnx"]
+
+    X --> Y["package_kaggle_artifacts.py"]
+    W --> Y
+    Y --> Z["Kaggle artifact dataset"]
+    Z --> AA["kaggle_submission_runner.py"]
+    AA --> AB["submission.csv"]
+```
+
+### Kaggle Submission Runtime
+
+```mermaid
+flowchart TD
+    A["Saved Kaggle notebook version"] --> B["Kaggle private rerun"]
+    C["Competition dataset"] --> B
+    D["Model artifact dataset"] --> B
+    E["Offline dependency wheel dataset"] --> B
+
+    B --> F{"Hidden test audio visible?"}
+    F -- "Yes" --> G["Run real inference"]
+    G --> H["Write /kaggle/working/submission.csv"]
+    F -- "No interactive test audio" --> I["Dry run on train_audio"]
+    I --> J["Write placeholder submission.csv"]
+
+    H --> K["Kaggle extracts submission.csv"]
+    J --> L["Notebook validation only"]
+```
+
+### Model Families and Roles
+
+```mermaid
+flowchart LR
+    A["EfficientNet/ConvNeXt teachers"] --> D["Teacher pseudo labels"]
+    B["Perch temporal student"] --> E["Perch pseudo labels"]
+    D --> F["Blended pseudo labels"]
+    E --> F
+    F --> G["CNN student"]
+    G --> H["ONNX / INT8 export"]
+    H --> I["Fast Kaggle submission"]
+
+    A --> J["Reduced teacher submission"]
+    J --> K["0.736 public"]
+    G --> L["Student INT8 submission"]
+    L --> M["0.720 public"]
+```
+
 ## Setup
 
 Install the Python dependencies:

@@ -2,7 +2,7 @@
 
 Standalone BirdCLEF-style multilabel soundscape pipeline extracted from this repo.
 
-For the full project overview, current results, and recommended next steps, see the root `README.md`.
+For the full project overview, system diagrams, current results, and recommended next steps, see the root `README.md`.
 
 Results so far:
 
