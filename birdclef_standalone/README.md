@@ -2,6 +2,24 @@
 
 Standalone BirdCLEF-style multilabel soundscape pipeline extracted from this repo.
 
+For the full project overview, current results, and recommended next steps, see the root `README.md`.
+
+Results so far:
+
+| Area | Result | Notes |
+|---|---:|---|
+| Kaggle student INT8 ONNX | `0.720` public | `notebookb21eefcf68 - Version 2`, first working submission. |
+| Kaggle top-3 teacher subset | `0.736` public | `notebookb21eefcf68 - Version 5`, full teacher ensemble timed out. |
+| Reference Perch notebook | `0.907` public | External/reference notebook result. |
+| CNN student fold-0 macro AP | `0.961097` | `outputs/birdclef_student_round2/student_best.pth`. |
+| Perch temporal fold-0 macro AP | `0.947069` | Better ROC-AUC, lower macro AP than CNN student. |
+| FP32 to INT8 macro AP delta | `-0.014232` | INT8 quantization hurt macro AP more than ROC-AUC. |
+
+Current recommendation:
+- Keep the CNN student as the main submission path.
+- Use Perch as an additional distillation signal via `generate_perch_sequence_pseudolabels.py` and `blend_pseudolabels.py`.
+- Evaluate the blended CNN student before packaging or submitting it.
+
 Files:
 - `prepare_kaggle_data.py`
 - `preprocess.py`
